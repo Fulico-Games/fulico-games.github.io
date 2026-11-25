@@ -93,25 +93,176 @@ body {
 		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
 <link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
 <link rel="manifest" href="index.manifest.json">
-<meta name="apple-mobile-web-app-capable" content="yes">
+
+	<meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Tinturbo">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="theme-color" content="#1a1436">
 <script>
-// O Godot recomeça a música só depois do fim dela (15 a 30 ms de silêncio). Aqui ela repete sem emenda:
-// só as músicas passam de 10 segundos.
+// Trecho do Tinturbo posto na página pelo export_web.sh: som, instalação e diagnóstico (?diag no endereço).
 (function () {
-	const start = AudioBufferSourceNode.prototype.start;
-	AudioBufferSourceNode.prototype.start = function (...args) {
-		if (this.buffer && this.buffer.duration > 10) {
-			this.loop = true;
+	'use strict';
+	const isDiag = new URL(location.href).searchParams.has('diag');
+	const contexts = [];
+	const report = { starts: 0, resumes: 0, error: '', peak: 0 };
+
+	// --- Som ---
+
+	// No iPhone, sem isto o modo silencioso cala o jogo (só existe a partir do iOS 16.4).
+	function askForPlayback() {
+		try {
+			if (navigator.audioSession) {
+				navigator.audioSession.type = 'playback';
+			}
+		} catch (e) {
+			report.error = 'audioSession: ' + e;
 		}
-		return start.apply(this, args);
+	}
+	askForPlayback();
+
+	const NativeContext = window.AudioContext || window.webkitAudioContext;
+	if (NativeContext) {
+		class TrackedContext extends NativeContext {
+			constructor(...args) {
+				super(...args);
+				contexts.push(this);
+			}
+		}
+		window.AudioContext = TrackedContext;
+	}
+
+	// O iPhone deixa o som parado ("suspended" ou "interrupted") até um toque, e de novo depois de trocar de app.
+	function unlock() {
+		for (const context of contexts) {
+			if (context.state !== 'running' && context.state !== 'closed') {
+				report.resumes++;
+				askForPlayback();
+				context.resume().catch(function (e) { report.error = 'resume: ' + e; });
+			}
+		}
+	}
+	for (const name of ['touchend', 'pointerup', 'click', 'keydown']) {
+		window.addEventListener(name, unlock, { capture: true, passive: true });
+	}
+	document.addEventListener('visibilitychange', function () {
+		if (!document.hidden) {
+			unlock();
+		}
+	});
+
+	// O Godot recomeça a música só depois do fim dela (15 a 30 ms de silêncio). Aqui ela repete sem emenda:
+	// só as músicas passam de 10 segundos.
+	if (window.AudioBufferSourceNode) {
+		const start = AudioBufferSourceNode.prototype.start;
+		AudioBufferSourceNode.prototype.start = function (...args) {
+			report.starts++;
+			if (this.buffer && this.buffer.duration > 10) {
+				this.loop = true;
+			}
+			return start.apply(this, args);
+		};
+	}
+
+	// --- Instalação ---
+
+	let installPrompt = null;
+	window.addEventListener('beforeinstallprompt', function (event) {
+		event.preventDefault();
+		installPrompt = event;
+	});
+	function isInstalled() {
+		return navigator.standalone === true || ['standalone', 'fullscreen', 'minimal-ui'].some(function (mode) {
+			return matchMedia('(display-mode: ' + mode + ')').matches;
+		});
+	}
+	function isIos() {
+		// O iPad se apresenta como Mac.
+		return /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Mac/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+	}
+	window.tinturboInstall = {
+		// installed, prompt (o navegador instala sozinho), safari, ios (outro navegador do iPhone) ou other.
+		kind: function () {
+			if (isInstalled()) {
+				return 'installed';
+			}
+			if (installPrompt) {
+				return 'prompt';
+			}
+			if (isIos()) {
+				return /CriOS|FxiOS|EdgiOS|OPiOS|OPT\/|GSA\//.test(navigator.userAgent) ? 'ios' : 'safari';
+			}
+			return 'other';
+		},
+		run: function () {
+			if (installPrompt) {
+				installPrompt.prompt();
+				installPrompt = null;
+			}
+		},
 	};
-})();
+
+	// --- Diagnóstico ---
+
+	if (!isDiag) {
+		return;
+	}
+	const connect = AudioNode.prototype.connect;
+	let analyser = null;
+	AudioNode.prototype.connect = function (target, ...rest) {
+		if (target instanceof AudioDestinationNode) {
+			if (!analyser) {
+				analyser = this.context.createAnalyser();
+			}
+			if (analyser.context === this.context) {
+				connect.call(this, analyser);
+			}
+		}
+		return connect.call(this, target, ...rest);
+	};
+	window.addEventListener('error', function (event) { report.error = event.message; });
+	function beep() {
+		const context = contexts[0];
+		if (!context) {
+			return;
+		}
+		context.resume();
+		const tone = context.createOscillator();
+		const volume = context.createGain();
+		volume.gain.value = 0.4;
+		tone.connect(volume);
+		volume.connect(context.destination);
+		tone.start();
+		tone.stop(context.currentTime + 0.6);
+	}
+	window.addEventListener('DOMContentLoaded', function () {
+		const box = document.createElement('div');
+		box.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:9;background:#000c;color:#fff;font:12px/1.35 monospace;padding:8px;white-space:pre-wrap;word-break:break-word';
+		const text = document.createElement('div');
+		const button = document.createElement('button');
+		button.textContent = 'TOCAR BIP';
+		button.style.cssText = 'font-size:18px;padding:8px 16px;margin-top:6px';
+		button.addEventListener('click', beep);
+		box.append(text, button);
+		document.body.append(box);
+		setInterval(function () {
+			if (analyser) {
+				const samples = new Float32Array(analyser.fftSize);
+				analyser.getFloatTimeDomainData(samples);
+				report.peak = Math.max(report.peak * 0.9, ...samples.map(Math.abs));
+			}
+			const audio = contexts.map(function (c) { return c.state + ' ' + c.sampleRate + ' t=' + c.currentTime.toFixed(1); }).join(' | ');
+			text.textContent = 'Versão 2026-11-25 08:51\n' + navigator.userAgent
+				+ '\nAbertura: ' + window.tinturboInstall.kind() + '  Tela: ' + innerWidth + 'x' + innerHeight + ' @' + devicePixelRatio
+				+ '\nÁudio: ' + (audio || 'nenhum')
+				+ '\nSessão: ' + (navigator.audioSession ? navigator.audioSession.type + ' / ' + navigator.audioSession.state : 'não existe')
+				+ '\nSons: ' + report.starts + '  Pedidos: ' + report.resumes + '  Volume na saída: ' + report.peak.toFixed(3)
+				+ '\nErro: ' + (report.error || 'nenhum');
+		}, 250);
+	});
+}());
 </script>
-	</head>
+</head>
 	<body>
 		<canvas id="canvas">
 			Your browser does not support the canvas tag.
@@ -129,7 +280,7 @@ body {
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":true,"fileSizes":{"index.pck":25721612,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":true,"fileSizes":{"index.pck":25725536,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
