@@ -100,13 +100,14 @@ body {
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="theme-color" content="#1a1436">
 <script>
-// Trecho do Tinturbo posto na página pelo tools/web/prepare_page.py: som, instalação e diagnóstico (?diag no endereço).
+// Trecho do Tinturbo posto na página pelo tools/web/prepare_page.py: som, instalação e diagnóstico (?diag no endereço
+// ou, na versão de teste, um toque no selo TESTE).
 (function () {
 	'use strict';
 	const isDiag = new URL(location.href).searchParams.has('diag');
 	const isTest = 'test' === 'test';
 	const contexts = [];
-	const report = { starts: 0, resumes: 0, error: '', peak: 0 };
+	const report = { starts: 0, resumes: 0, revives: 0, returns: 0, error: '', peak: 0 };
 
 	// --- Teste e produção separados ---
 
@@ -118,8 +119,9 @@ body {
 		};
 		window.addEventListener('DOMContentLoaded', function () {
 			const badge = document.createElement('div');
-			badge.textContent = 'TESTE 2026-11-25 12:05';
-			badge.style.cssText = 'position:fixed;left:6px;bottom:4px;z-index:8;color:#fff;opacity:.7;font:10px monospace;pointer-events:none;text-shadow:0 0 2px #000';
+			badge.textContent = 'TESTE 2026-11-25 12:26';
+			badge.style.cssText = 'position:fixed;left:6px;bottom:4px;z-index:8;color:#fff;opacity:.7;padding:6px;font:10px monospace;text-shadow:0 0 2px #000';
+			badge.addEventListener('click', toggleDiagnostics);
 			document.body.append(badge);
 		});
 	}
@@ -149,24 +151,116 @@ body {
 		window.AudioContext = TrackedContext;
 	}
 
-	// O iPhone deixa o som parado ("suspended" ou "interrupted") até um toque, e de novo depois de trocar de app.
-	function unlock() {
-		for (const context of contexts) {
-			if (context.state !== 'running' && context.state !== 'closed') {
-				report.resumes++;
-				askForPlayback();
-				context.resume().catch(function (e) { report.error = 'resume: ' + e; });
+	// O iPhone deixa o som parado ("suspended" ou "interrupted") até um toque. Depois de trocar de app, pode
+	// também dizer que está tocando ("running") com o relógio do som parado: por isso ele é medido.
+	const CHECK_MS = 400;
+	const RETRY_MS = 900;
+	const clocks = new Map();
+	let lastTry = 0;
+	let silence = null;
+
+	function isHealthy(context) {
+		const clock = clocks.get(context);
+		return context.state === 'running' && (!clock || !clock.isFrozen);
+	}
+
+	function resume(context) {
+		report.resumes++;
+		context.resume().catch(function (e) { report.error = 'resume: ' + e; });
+	}
+
+	// Um som mudo num elemento comum faz o iPhone reabrir a saída de áudio.
+	function playSilence() {
+		if (!silence) {
+			const size = 800;
+			const view = new DataView(new ArrayBuffer(44 + size));
+			const text = function (at, value) {
+				for (let i = 0; i < value.length; i++) {
+					view.setUint8(at + i, value.charCodeAt(i));
+				}
+			};
+			text(0, 'RIFF');
+			view.setUint32(4, 36 + size, true);
+			text(8, 'WAVEfmt ');
+			view.setUint32(16, 16, true);
+			view.setUint16(20, 1, true);
+			view.setUint16(22, 1, true);
+			view.setUint32(24, 8000, true);
+			view.setUint32(28, 8000, true);
+			view.setUint16(32, 1, true);
+			view.setUint16(34, 8, true);
+			text(36, 'data');
+			view.setUint32(40, size, true);
+			for (let i = 0; i < size; i++) {
+				view.setUint8(44 + i, 128);
 			}
+			silence = new Audio(URL.createObjectURL(new Blob([view], { type: 'audio/wav' })));
+		}
+		silence.play().catch(function () {});
+	}
+
+	// Em todo toque: religa o que estiver parado. O travado é desligado e ligado de novo.
+	function unlock() {
+		const now = performance.now();
+		const broken = contexts.filter(function (context) { return context.state !== 'closed' && !isHealthy(context); });
+		if (broken.length === 0 || now - lastTry < RETRY_MS) {
+			return;
+		}
+		lastTry = now;
+		askForPlayback();
+		for (const context of broken) {
+			if (context.state === 'running') {
+				report.revives++;
+				playSilence();
+				context.suspend().catch(function () {});
+			} else if (report.returns > 0) {
+				playSilence();
+			}
+			resume(context);
 		}
 	}
 	for (const name of ['touchend', 'pointerup', 'click', 'keydown']) {
 		window.addEventListener(name, unlock, { capture: true, passive: true });
 	}
+
+	// Sair desligando evita que o iPhone corte o som no meio e o deixe travado.
+	function onLeave() {
+		for (const context of contexts) {
+			if (context.state === 'running') {
+				context.suspend().catch(function () {});
+			}
+		}
+	}
+	function onReturn() {
+		report.returns++;
+		lastTry = 0;
+		clocks.clear();
+		unlock();
+	}
 	document.addEventListener('visibilitychange', function () {
-		if (!document.hidden) {
-			unlock();
+		if (document.hidden) {
+			onLeave();
+		} else {
+			onReturn();
 		}
 	});
+	window.addEventListener('pageshow', function (event) {
+		if (event.persisted) {
+			onReturn();
+		}
+	});
+	setInterval(function () {
+		if (document.hidden) {
+			return;
+		}
+		for (const context of contexts) {
+			const clock = clocks.get(context);
+			const isRunning = context.state === 'running';
+			// Duas medidas seguidas sem andar: uma só pode ser um engasgo.
+			const stalls = isRunning && clock && context.currentTime <= clock.time ? clock.stalls + 1 : 0;
+			clocks.set(context, { time: context.currentTime, stalls: stalls, isFrozen: stalls >= 2 });
+		}
+	}, CHECK_MS);
 
 	// O Godot recomeça a música só depois do fim dela (15 a 30 ms de silêncio). Aqui ela repete sem emenda:
 	// só as músicas passam de 10 segundos.
@@ -221,23 +315,26 @@ body {
 
 	// --- Diagnóstico ---
 
-	if (!isDiag) {
-		return;
-	}
-	const connect = AudioNode.prototype.connect;
+	let diagBox = null;
 	let analyser = null;
-	AudioNode.prototype.connect = function (target, ...rest) {
-		if (target instanceof AudioDestinationNode) {
-			if (!analyser) {
-				analyser = this.context.createAnalyser();
+	if (isDiag || isTest) {
+		const connect = AudioNode.prototype.connect;
+		AudioNode.prototype.connect = function (target, ...rest) {
+			if (target instanceof AudioDestinationNode) {
+				if (!analyser) {
+					analyser = this.context.createAnalyser();
+				}
+				if (analyser.context === this.context) {
+					connect.call(this, analyser);
+				}
 			}
-			if (analyser.context === this.context) {
-				connect.call(this, analyser);
-			}
-		}
-		return connect.call(this, target, ...rest);
-	};
-	window.addEventListener('error', function (event) { report.error = event.message; });
+			return connect.call(this, target, ...rest);
+		};
+		window.addEventListener('error', function (event) { report.error = event.message; });
+	}
+	if (isDiag) {
+		window.addEventListener('DOMContentLoaded', toggleDiagnostics);
+	}
 	function beep() {
 		const context = contexts[0];
 		if (!context) {
@@ -252,7 +349,13 @@ body {
 		tone.start();
 		tone.stop(context.currentTime + 0.6);
 	}
-	window.addEventListener('DOMContentLoaded', function () {
+	function toggleDiagnostics() {
+		if (diagBox) {
+			clearInterval(diagBox.timer);
+			diagBox.remove();
+			diagBox = null;
+			return;
+		}
 		const box = document.createElement('div');
 		box.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:9;background:#000c;color:#fff;font:12px/1.35 monospace;padding:8px;white-space:pre-wrap;word-break:break-word';
 		const text = document.createElement('div');
@@ -262,21 +365,22 @@ body {
 		button.addEventListener('click', beep);
 		box.append(text, button);
 		document.body.append(box);
-		setInterval(function () {
+		diagBox = box;
+		box.timer = setInterval(function () {
 			if (analyser) {
 				const samples = new Float32Array(analyser.fftSize);
 				analyser.getFloatTimeDomainData(samples);
 				report.peak = Math.max(report.peak * 0.9, ...samples.map(Math.abs));
 			}
-			const audio = contexts.map(function (c) { return c.state + ' ' + c.sampleRate + ' t=' + c.currentTime.toFixed(1); }).join(' | ');
-			text.textContent = 'Versão 2026-11-25 12:05 (test)\n' + navigator.userAgent
+			const audio = contexts.map(function (c) { return c.state + (isHealthy(c) ? '' : ' TRAVADO') + ' ' + c.sampleRate + ' t=' + c.currentTime.toFixed(1); }).join(' | ');
+			text.textContent = 'Versão 2026-11-25 12:26 (test)\n' + navigator.userAgent
 				+ '\nAbertura: ' + window.tinturboInstall.kind() + '  Tela: ' + innerWidth + 'x' + innerHeight + ' @' + devicePixelRatio
 				+ '\nÁudio: ' + (audio || 'nenhum')
 				+ '\nSessão: ' + (navigator.audioSession ? navigator.audioSession.type + ' / ' + navigator.audioSession.state : 'não existe')
-				+ '\nSons: ' + report.starts + '  Pedidos: ' + report.resumes + '  Volume na saída: ' + report.peak.toFixed(3)
+				+ '\nSons: ' + report.starts + '  Pedidos: ' + report.resumes + '  Voltas: ' + report.returns + '  Destravou: ' + report.revives + '  Volume na saída: ' + report.peak.toFixed(3)
 				+ '\nErro: ' + (report.error || 'nenhum');
 		}, 250);
-	});
+	}
 }());
 </script>
 </head>
