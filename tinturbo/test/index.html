@@ -4,6 +4,7 @@
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
 		<title>Tinturbo Teste</title>
+		<link rel="apple-touch-icon" sizes="180x180" href="/tinturbo/test/icon-180.png">
 		<style>
 html, body, #canvas {
 	margin: 0;
@@ -91,7 +92,6 @@ body {
 }
 		</style>
 		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
-<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
 <link rel="manifest" href="index.manifest.json">
 
 	<meta name="apple-mobile-web-app-capable" content="yes">
@@ -118,7 +118,7 @@ body {
 		};
 		window.addEventListener('DOMContentLoaded', function () {
 			const badge = document.createElement('div');
-			badge.textContent = 'TESTE 2026-11-25 10:56';
+			badge.textContent = 'TESTE 2026-11-25 11:28';
 			badge.style.cssText = 'position:fixed;left:6px;bottom:4px;z-index:8;color:#fff;opacity:.7;font:10px monospace;pointer-events:none;text-shadow:0 0 2px #000';
 			document.body.append(badge);
 		});
@@ -269,7 +269,7 @@ body {
 				report.peak = Math.max(report.peak * 0.9, ...samples.map(Math.abs));
 			}
 			const audio = contexts.map(function (c) { return c.state + ' ' + c.sampleRate + ' t=' + c.currentTime.toFixed(1); }).join(' | ');
-			text.textContent = 'Versão 2026-11-25 10:56 (test)\n' + navigator.userAgent
+			text.textContent = 'Versão 2026-11-25 11:28 (test)\n' + navigator.userAgent
 				+ '\nAbertura: ' + window.tinturboInstall.kind() + '  Tela: ' + innerWidth + 'x' + innerHeight + ' @' + devicePixelRatio
 				+ '\nÁudio: ' + (audio || 'nenhum')
 				+ '\nSessão: ' + (navigator.audioSession ? navigator.audioSession.type + ' / ' + navigator.audioSession.state : 'não existe')

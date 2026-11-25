@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1795615002|4240249';
+const CACHE_VERSION = '1795616893|4086194';
 /** @type {string} */
 const CACHE_PREFIX = 'TinturboTest-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
