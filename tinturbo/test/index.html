@@ -119,7 +119,7 @@ body {
 		};
 		window.addEventListener('DOMContentLoaded', function () {
 			const badge = document.createElement('div');
-			badge.textContent = 'TESTE 2026-11-25 12:26';
+			badge.textContent = 'TESTE 2026-11-25 12:47';
 			badge.style.cssText = 'position:fixed;left:6px;bottom:4px;z-index:8;color:#fff;opacity:.7;padding:6px;font:10px monospace;text-shadow:0 0 2px #000';
 			badge.addEventListener('click', toggleDiagnostics);
 			document.body.append(badge);
@@ -275,6 +275,41 @@ body {
 		};
 	}
 
+	// --- Atualização ---
+
+	// Pedida pelo jogo quando o servidor já tem regras novas. Com versão nova no site, troca para ela; sem
+	// achar, descarta a cópia guardada (só a deste jogo) e baixa tudo de novo. Sem internet, não mexe em nada.
+	window.tinturboUpdate = async function () {
+		const wait = function (ms) { return new Promise(function (done) { setTimeout(done, ms); }); };
+		const registration = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
+		try {
+			const page = await fetch('index.html?update=' + Date.now(), { cache: 'no-store' });
+			if (!page.ok) {
+				return;
+			}
+		} catch (e) {
+			return;
+		}
+		if (registration) {
+			await registration.update().catch(function () {});
+			for (let i = 0; i < 25 && (registration.installing || registration.waiting); i++) {
+				if (registration.waiting) {
+					navigator.serviceWorker.addEventListener('controllerchange', function () { location.reload(); });
+					registration.waiting.postMessage('claim');
+					return;
+				}
+				await wait(200);
+			}
+			for (const name of await caches.keys()) {
+				if (name.startsWith('TinturboTest-sw-cache-')) {
+					await caches.delete(name);
+				}
+			}
+			await registration.unregister();
+		}
+		location.reload();
+	};
+
 	// --- Instalação ---
 
 	let installPrompt = null;
@@ -373,7 +408,7 @@ body {
 				report.peak = Math.max(report.peak * 0.9, ...samples.map(Math.abs));
 			}
 			const audio = contexts.map(function (c) { return c.state + (isHealthy(c) ? '' : ' TRAVADO') + ' ' + c.sampleRate + ' t=' + c.currentTime.toFixed(1); }).join(' | ');
-			text.textContent = 'Versão 2026-11-25 12:26 (test)\n' + navigator.userAgent
+			text.textContent = 'Versão 2026-11-25 12:47 (test)\n' + navigator.userAgent
 				+ '\nAbertura: ' + window.tinturboInstall.kind() + '  Tela: ' + innerWidth + 'x' + innerHeight + ' @' + devicePixelRatio
 				+ '\nÁudio: ' + (audio || 'nenhum')
 				+ '\nSessão: ' + (navigator.audioSession ? navigator.audioSession.type + ' / ' + navigator.audioSession.state : 'não existe')
@@ -401,7 +436,7 @@ body {
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":true,"fileSizes":{"index.pck":25734620,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":true,"fileSizes":{"index.pck":25742192,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
