@@ -118,7 +118,7 @@ body {
 		};
 		window.addEventListener('DOMContentLoaded', function () {
 			const badge = document.createElement('div');
-			badge.textContent = 'TESTE 2026-11-25 11:28';
+			badge.textContent = 'TESTE 2026-11-25 11:35';
 			badge.style.cssText = 'position:fixed;left:6px;bottom:4px;z-index:8;color:#fff;opacity:.7;font:10px monospace;pointer-events:none;text-shadow:0 0 2px #000';
 			document.body.append(badge);
 		});
@@ -269,7 +269,7 @@ body {
 				report.peak = Math.max(report.peak * 0.9, ...samples.map(Math.abs));
 			}
 			const audio = contexts.map(function (c) { return c.state + ' ' + c.sampleRate + ' t=' + c.currentTime.toFixed(1); }).join(' | ');
-			text.textContent = 'Versão 2026-11-25 11:28 (test)\n' + navigator.userAgent
+			text.textContent = 'Versão 2026-11-25 11:35 (test)\n' + navigator.userAgent
 				+ '\nAbertura: ' + window.tinturboInstall.kind() + '  Tela: ' + innerWidth + 'x' + innerHeight + ' @' + devicePixelRatio
 				+ '\nÁudio: ' + (audio || 'nenhum')
 				+ '\nSessão: ' + (navigator.audioSession ? navigator.audioSession.type + ' / ' + navigator.audioSession.state : 'não existe')
