@@ -119,7 +119,7 @@ body {
 		};
 		window.addEventListener('DOMContentLoaded', function () {
 			const badge = document.createElement('div');
-			badge.textContent = 'TESTE v0.4.0 (206)';
+			badge.textContent = 'TESTE v0.4.0-dev.216';
 			badge.style.cssText = 'position:fixed;left:6px;bottom:4px;z-index:8;color:#fff;opacity:.7;padding:6px;font:10px monospace;text-shadow:0 0 2px #000';
 			badge.addEventListener('click', toggleDiagnostics);
 			document.body.append(badge);
@@ -350,6 +350,60 @@ body {
 		},
 	};
 
+	// --- Notificações (NOTIFICATIONS_INVITES.md 1.5; o jogo chama por scripts/web_push.gd) ---
+
+	let pushResult = '';
+	function pushKey(text) {
+		const padded = (text + '='.repeat((4 - text.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+		return Uint8Array.from(atob(padded), function (c) { return c.charCodeAt(0); });
+	}
+	window.tinturboPush = {
+		// unsupported, install (iPhone sem instalar: a Apple só libera notificações para o app instalado), default, granted ou denied.
+		state: function () {
+			if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+				return isIos() && !isInstalled() ? 'install' : 'unsupported';
+			}
+			return Notification.permission;
+		},
+		// O jogo pergunta até sair algo diferente de "busy": a inscrição em JSON ou "error:motivo".
+		result: function () {
+			return pushResult;
+		},
+		// ask: pode abrir o pedido do navegador (o jogo só manda true logo depois de um toque).
+		subscribe: function (publicKey, ask) {
+			pushResult = 'busy';
+			(async function () {
+				let answer = Notification.permission;
+				if (answer === 'default' && ask) {
+					answer = await Notification.requestPermission();
+				}
+				if (answer !== 'granted') {
+					pushResult = 'error:' + answer;
+					return;
+				}
+				const registration = await navigator.serviceWorker.ready;
+				let subscription = await registration.pushManager.getSubscription();
+				if (!subscription) {
+					subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: pushKey(publicKey) });
+				}
+				const data = subscription.toJSON();
+				pushResult = JSON.stringify({ endpoint: data.endpoint, keys: data.keys, zone: Intl.DateTimeFormat().resolvedOptions().timeZone || '' });
+			}()).catch(function (e) { pushResult = 'error:' + e; });
+		},
+		unsubscribe: function () {
+			pushResult = 'busy';
+			(async function () {
+				const registration = await navigator.serviceWorker.ready;
+				const subscription = await registration.pushManager.getSubscription();
+				const endpoint = subscription ? subscription.endpoint : '';
+				if (subscription) {
+					await subscription.unsubscribe();
+				}
+				pushResult = JSON.stringify({ endpoint: endpoint });
+			}()).catch(function (e) { pushResult = 'error:' + e; });
+		},
+	};
+
 	// --- Diagnóstico ---
 
 	let diagBox = null;
@@ -410,7 +464,7 @@ body {
 				report.peak = Math.max(report.peak * 0.9, ...samples.map(Math.abs));
 			}
 			const audio = contexts.map(function (c) { return c.state + (isHealthy(c) ? '' : ' TRAVADO') + ' ' + c.sampleRate + ' t=' + c.currentTime.toFixed(1); }).join(' | ');
-			text.textContent = 'Versão v0.4.0 (206) (test)\nrelease/0.4.0 4f558e4 2026-11-28 11:17:35 UTC\n' + navigator.userAgent
+			text.textContent = 'Versão v0.4.0-dev.216 (test)\ndevelop dea8731 2026-11-28 12:31:53 UTC\n' + navigator.userAgent
 				+ '\nAbertura: ' + window.tinturboInstall.kind() + '  Tela: ' + innerWidth + 'x' + innerHeight + ' @' + devicePixelRatio
 				+ '\nÁudio: ' + (audio || 'nenhum')
 				+ '\nSessão: ' + (navigator.audioSession ? navigator.audioSession.type + ' / ' + navigator.audioSession.state : 'não existe')
@@ -438,7 +492,7 @@ body {
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":true,"fileSizes":{"index.pck":25936724,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":true,"fileSizes":{"index.pck":25947304,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 

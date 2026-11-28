@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1795864655|4428844';
+const CACHE_VERSION = '1795869113|4631161';
 /** @type {string} */
 const CACHE_PREFIX = 'TinturboTest-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
@@ -164,3 +164,34 @@ self.addEventListener('message', (event) => {
 	});
 });
 
+
+
+self.addEventListener('push', function (event) {
+	let data = {};
+	try {
+		data = event.data ? event.data.json() : {};
+	} catch (e) {
+		data = { body: event.data ? event.data.text() : '' };
+	}
+	event.waitUntil(self.registration.showNotification(data.title || 'Tinturbo', {
+		body: data.body || '',
+		icon: 'icon-192.png',
+		badge: 'icon-192.png',
+		tag: data.tag || 'tinturbo',
+		data: { screen: data.screen || '' },
+	}));
+});
+
+self.addEventListener('notificationclick', function (event) {
+	event.notification.close();
+	const screen = (event.notification.data || {}).screen || '';
+	const target = new URL(screen ? '?tela=' + encodeURIComponent(screen) : './', self.registration.scope).href;
+	event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (windows) {
+		for (const client of windows) {
+			if (client.url.startsWith(self.registration.scope) && 'focus' in client) {
+				return client.focus();
+			}
+		}
+		return self.clients.openWindow(target);
+	}));
+});
