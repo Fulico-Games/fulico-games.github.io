@@ -1,7 +1,7 @@
 {
-	"version": "0.3.0",
-	"branch": "develop",
-	"commit": "5355eb9",
-	"build": 148,
-	"fingerprint": "c917e436c6b6f73b"
+	"version": "0.4.0",
+	"branch": "release/0.4.0",
+	"commit": "20f0024",
+	"build": 204,
+	"fingerprint": "bba5bfecb492b4e7"
 }
